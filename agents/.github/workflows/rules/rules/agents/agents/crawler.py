@@ -37,7 +37,7 @@ def load_seeds():
 def fetch(u):
     try:
         r = requests.get(u, headers=HEADERS, timeout=TIMEOUT)
-        if r.statuscode != 200:
+        if r.status_code != 200:
             return None
         text = r.text
         title = ""
