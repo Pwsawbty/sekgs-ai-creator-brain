@@ -1,0 +1,26 @@
+relation_types:
+  - uses
+  - enhances
+  - generates
+  - depends_on
+
+relation_rules:
+  - if_pair_contains:
+      from: ["tool", "workflow"]
+      to: ["dataset"]
+    relation: uses
+
+  - if_pair_contains:
+      from: ["workflow"]
+      to: ["tool"]
+    relation: depends_on
+
+  - if_pair_contains:
+      from: ["tool"]
+      to: ["concept"]
+    relation: enhances
+
+  - if_pair_contains:
+      from: ["workflow"]
+      to: ["concept"]
+    relation: generates
