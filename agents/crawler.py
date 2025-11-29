@@ -1,40 +1,16 @@
-#!/usr/bin/env python3
-"""
-crawler.py - lightweight, robust crawler for mobile/GitHub Actions.
-Writes: data/crawler_items.json
-"""
-
 import json
-import time
-import requests
-from datetime import datetime
-from pathlib import Path
 
-ROOT = Path.cwd()
-DATA_DIR = ROOT / "data"
-OUT_FILE = DATA_DIR / "crawler_items.json"
-SEEDS_FILE = ROOT / "agents" / "seeds.txt"
+def run():
+    data = [
+        {"title": "OpenAI releases new model", "source": "news"},
+        {"title": "GitHub announces automation updates", "source": "dev"}
+    ]
 
-DEFAULT_SEEDS = [
-    "https://openai.com/blog",
-    "https://github.com/trending",
-    "https://arxiv.org/list/cs.AI/recent",
-    "https://towardsdatascience.com/",
-    "https://thenextweb.com/search?query=ai"
-]
+    with open("data/crawler_items.json", "w") as f:
+        json.dump(data, f, indent=2)
 
-HEADERS = {"User-Agent": "sekgs-crawler/1.0 (+https://github.com)"}
-TIMEOUT = 12
-
-def load_seeds():
-    if SEEDS_FILE.exists():
-        seeds = [s.strip() for s in SEEDS_FILE.read_text(encoding="utf-8").splitlines() if s.strip()]
-        if seeds:
-            return seeds
-    return DEFAULT_SEEDS
-
-def fetch(u):
-    try:
+if __name__ == "__main__":
+    run()    try:
         r = requests.get(u, headers=HEADERS, timeout=TIMEOUT)
         if r.status_code != 200:
             return None
