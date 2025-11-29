@@ -1,0 +1,16 @@
+relations:
+  - name: uses
+    from: workflow
+    to: ai_tool
+
+  - name: extends
+    from: concept
+    to: concept
+
+  - name: powered_by
+    from: ai_tool
+    to: concept
+
+  - name: part_of
+    from: ai_tool
+    to: creator_stack
