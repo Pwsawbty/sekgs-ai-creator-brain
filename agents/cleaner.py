@@ -1,15 +1,78 @@
+#!/usr/bin/env python3
+"""
+cleaner.py - dedupe + simple quality heuristics
+Reads: data/crawler_items.json
+Writes: data/cleaned_items.json
+"""
+
 import json
+from pathlib import Path
+from datetime import datetime
 
-def run():
-    try:
-        raw = json.load(open("data/crawler_items.json"))
-    except:
-        raw = []
+ROOT = Path.cwd()
+DATA_DIR = ROOT / "data"
+IN_FILE = DATA_DIR / "crawler_items.json"
+OUT_FILE = DATA_DIR / "cleaned_items.json"
 
-    cleaned = [item for item in raw if "title" in item]
+MIN_SNIPPET = 80
+TRUST_DOMAINS_HIGH = ["openai.com", "arxiv.org", "github.com", "medium.com", "towardsdatascience.com"]
 
-    with open("data/cleaned_items.json", "w") as f:
-        json.dump(cleaned, f, indent=2)
+def load_items():
+    if not IN_FILE.exists():
+        return []
+    j = json.loads(IN_FILE.read_text(encoding="utf-8"))
+    return j.get("items", [])
+
+def dedupe(items):
+    seen = set()
+    out = []
+    for it in items:
+        url = it.get("url", "")
+        if not url:
+            continue
+        key = url.split("#")[0].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+    return out
+
+def quality_filter(items):
+    out = []
+    for it in items:
+        snippet = (it.get("snippet") or "").strip()
+        if len(snippet) < MIN_SNIPPET:
+            continue
+        out.append(it)
+    return out
+
+def trust_score_from_url(url):
+    if not url:
+        return 30
+    for d in TRUST_DOMAINS_HIGH:
+        if d in url:
+            return 80
+    return 40
+
+def normalize_title(title, url):
+    t = (title or "").strip()
+    if not t:
+        return url.split("/")[-1] or url
+    return t[:120]
+
+def main():
+    items = load_items()
+    items = dedupe(items)
+    items = quality_filter(items)
+    now = datetime.utcnow().isoformat() + "Z"
+    for it in items:
+        url = it.get("url","")
+        it["trust_score"] = trust_score_from_url(url)
+        it["title"] = normalize_title(it.get("title"), url)
+        it["cleaned_at"] = now
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_FILE.write_text(json.dumps({"generated_at": now, "items": items}, indent=2), encoding="utf-8")
+    print("Cleaner done. items:", len(items))
 
 if __name__ == "__main__":
-    run()
+    main()
