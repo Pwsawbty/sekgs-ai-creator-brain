@@ -1,0 +1,24 @@
+types:
+  - ai_tool
+  - workflow
+  - concept
+  - creator_stack
+
+patterns:
+  ai_tool:
+    - "AI tool"
+    - "automation"
+    - "SaaS"
+    - "API"
+  workflow:
+    - "process"
+    - "pipeline"
+    - "system"
+  concept:
+    - "idea"
+    - "method"
+    - "approach"
+  creator_stack:
+    - "creator"
+    - "editing"
+    - "content"
