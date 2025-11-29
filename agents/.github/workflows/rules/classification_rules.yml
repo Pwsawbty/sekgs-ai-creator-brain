@@ -1,0 +1,18 @@
+domain: ai-tools-creator-workflows
+
+node_types:
+  - tool
+  - workflow
+  - concept
+  - usecase
+  - report
+  - dataset
+
+classification:
+  - if_text_contains: ["generate","ai tool","model","agents"] -> type: tool
+  - if_text_contains: ["workflow","steps","process","framework"] -> type: workflow
+  - if_text_contains: ["trend","insight","analysis","report"] -> type: report
+
+decay:
+  stale_days: 180
+  percent: 20
