@@ -1,9 +1,0 @@
-relation_priority:
-  requires: 1.0
-  precedes: 0.8
-  improves: 0.7
-  related_to: 0.5
-
-max_relations_per_node: 10
-similarity_threshold: 0.6
-duplicate_merge_threshold: 0.85
