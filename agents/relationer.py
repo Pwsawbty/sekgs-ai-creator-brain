@@ -29,7 +29,10 @@ def main():
         b = Path(node_files[i+1]).stem
         edges.append({"source": a, "target": b, "type": "related_to", "weight": 0.5})
     graph["edges"] = edges
-    graph.setdefault("meta", {})["relations_generated_at"] = __import__("datetime").datetime.datetime.utcnow().isoformat()+"Z"
+    graph.setdefault("meta", {})["relations_generated_at"] = _from datetime import datetime
+
+graph.setdefault("meta", {})
+graph["meta"]["relations_generated_at"] = datetime.utcnow().isoformat() + "Z"
     GRAPH.write_text(json.dumps(graph, indent=2), encoding="utf-8")
     print("relationer: wrote", len(edges), "edges")
 
