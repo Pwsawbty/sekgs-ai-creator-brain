@@ -1,171 +1,221 @@
 #!/usr/bin/env python3
 """
-Ultra-pro relationer.py
-- Deterministic lightweight similarity edges (no external libs)
-- Verbose logs for GitHub Actions (prints counts & quick diagnostics)
-- Atomic write and checksum for auditability
-- Config via env vars: RELATIONS_TOP_K, MIN_SIMILARITY
-- Safe: will never crash workflow on malformed nodes; prints reasons
+Robust relationer for SEKGS.
+
+- No external dependencies (only Python stdlib).
+- Deterministic, idempotent, atomic writes.
+- Uses difflib.SequenceMatcher for a stable text similarity metric.
+- Safeguards:
+  * skips relation stage if <2 nodes
+  * writes partial graph if anything fails
+  * computes top-k relations per node with dedupe
+  * writes checksums and timestamps in meta
+  * logs to data/logs/relationer.log
+- Configurable with environment variables:
+  RELATIONS_TOP_K (default 3)
+  RELATIONS_MIN_SIM (default 0.05)
+  DATA_DIR (default ./data)
 """
-
-import os, json, tempfile, hashlib, time
 from pathlib import Path
-from datetime import datetime
-from typing import List, Dict, Set, Tuple
+import json, os, time, traceback, hashlib
+from difflib import SequenceMatcher
+from typing import List, Tuple
 
-ROOT = Path.cwd()
-DATA_DIR = ROOT / "data"
+# ---------- config ----------
+DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 NODES_DIR = DATA_DIR / "nodes"
 GRAPH_FILE = DATA_DIR / "graph.json"
+LOG_DIR = DATA_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+LOG_FILE = LOG_DIR / "relationer.log"
 
 RELATIONS_TOP_K = int(os.environ.get("RELATIONS_TOP_K", "3"))
-MIN_SIMILARITY = float(os.environ.get("MIN_SIMILARITY", "0.05"))
-MAX_SUMMARY_CHARS = int(os.environ.get("MAX_SUMMARY_CHARS", "2000"))
+RELATIONS_MIN_SIM = float(os.environ.get("RELATIONS_MIN_SIM", "0.05"))
+# ---------- end config ----------
 
-def log(*args):
-    print("[relationer]", *args)
-
-def safe_read_json(p: Path):
+def log(msg: str):
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    line = f"{ts} [relationer] {msg}"
+    print(line)
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        # If logging fails, don't crash
+        pass
+
+def safe_read_json(path: Path):
+    try:
+        s = path.read_text(encoding="utf-8")
+        return json.loads(s)
     except Exception as e:
-        log("WARN: failed to read", str(p), "-", type(e).__name__, str(e)[:120])
+        log(f"safe_read_json failed for {path}: {e}")
         return None
 
-def safe_list_nodes() -> List[Path]:
-    if not NODES_DIR.exists():
-        log("INFO: nodes dir not found:", NODES_DIR)
+def sorted_node_list() -> List[Path]:
+    """Return deterministic sorted list of node file paths."""
+    try:
+        files = [p for p in NODES_DIR.iterdir() if p.is_file() and p.suffix == ".json"]
+        # sort by name to keep deterministic order
+        files.sort(key=lambda p: p.name)
+        return files
+    except Exception as e:
+        log(f"sorted_node_list error: {e}")
         return []
-    return sorted([p for p in NODES_DIR.glob("*.json") if p.is_file()])
 
 def normalize_text(s: str) -> str:
-    if not s:
-        return ""
-    s = s.replace("\n", " ").strip()
-    s = " ".join(s.split())
-    return s.lower()
+    # Minimal normalization: lowercase, collapse whitespace
+    return " ".join(s.replace("\r", " ").replace("\n", " ").split()).lower()
 
-def tokenize(s: str) -> Set[str]:
-    s = normalize_text(s)
-    if len(s) > MAX_SUMMARY_CHARS:
-        s = s[:MAX_SUMMARY_CHARS]
-    import re
-    toks = [t for t in re.split(r"\W+", s) if t]
-    return set(toks)
-
-def jaccard(a: Set[str], b: Set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    inter = a.intersection(b)
-    union = a.union(b)
-    return len(inter) / len(union) if union else 0.0
-
-def atomic_write(path: Path, obj):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = None
+def similarity(a: str, b: str) -> float:
+    """Stable similarity measure using SequenceMatcher ratio."""
     try:
-        fd, tmp = tempfile.mkstemp(dir=str(path.parent))
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(obj, f, indent=2, ensure_ascii=False)
-        Path(tmp).replace(path)
-    finally:
-        if tmp and Path(tmp).exists():
-            try:
-                Path(tmp).unlink()
-            except Exception:
-                pass
+        if not a or not b:
+            return 0.0
+        # SequenceMatcher is deterministic and in stdlib
+        return float(SequenceMatcher(None, a, b).ratio())
+    except Exception as e:
+        log(f"similarity error: {e}")
+        return 0.0
 
-def compute_checksum(g: Dict) -> str:
-    payload = {
-        "nodes": sorted(g.get("nodes", [])),
-        "edges": sorted([f"{e['source']}|{e['target']}|{e.get('type')}|{e.get('weight')}" for e in g.get("edges", [])])
-    }
-    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
-
-def load_graph() -> Dict:
-    g = safe_read_json(GRAPH_FILE)
-    if not g:
-        g = {"meta": {"domain":"ai-tools-creator-workflows","version":"0.1"}, "nodes": [], "edges": []}
-    # ensure keys
-    g.setdefault("nodes", [])
-    g.setdefault("edges", [])
-    g.setdefault("meta", {})
-    return g
-
-def read_node_files() -> List[Dict]:
-    files = safe_list_nodes()
-    nodes = []
-    for p in files:
-        j = safe_read_json(p)
-        if not j:
-            continue
-        nid = j.get("id") or p.stem
-        title = normalize_text(j.get("title",""))
-        summary = normalize_text(j.get("summary",""))
-        text = (title + " " + summary).strip()
-        nodes.append({"id": nid, "title": title, "summary": summary, "text": text, "file": str(p)})
-    log("INFO: loaded", len(nodes), "node files")
-    return nodes
-
-def compute_edges(nodes: List[Dict]) -> List[Dict]:
-    token_map = {}
-    for nd in nodes:
-        token_map[nd["id"]] = tokenize(nd["text"])
-    edges_map = {}
+def compute_relations(nodes: List[Tuple[str, str]]) -> Tuple[List[dict], int]:
+    """
+    nodes: list of tuples (node_id, text)
+    returns (edges, relations_count)
+    edges entries: { "source": id1, "target": id2, "score": float }
+    """
     n = len(nodes)
+    edges = []
+    seen_pairs = set()
+    # Pre-normalize texts
+    norm_texts = [normalize_text(t) for (_, t) in nodes]
+
     for i in range(n):
-        a = nodes[i]
-        scores = []
+        id_i, _ = nodes[i]
+        sims = []
         for j in range(n):
             if i == j:
                 continue
-            b = nodes[j]
-            score = jaccard(token_map[a["id"]], token_map[b["id"]])
-            if score >= MIN_SIMILARITY:
-                scores.append((b["id"], score))
-        scores.sort(key=lambda x: (-x[1], x[0]))
-        top = scores[:RELATIONS_TOP_K]
-        for tid, w in top:
-            s,t = sorted([a["id"], tid])
-            key = f"{s}__{t}__related_to"
-            # keep max weight for same edge
-            if key not in edges_map or edges_map[key]["weight"] < w:
-                edges_map[key] = {"source": s, "target": t, "type": "related_to", "weight": round(float(w),3)}
-    edges = sorted(edges_map.values(), key=lambda e: (e["source"], e["target"], -e["weight"]))
-    log("INFO: computed", len(edges), "edges")
-    return edges
+            id_j, _ = nodes[j]
+            pair = (min(id_i, id_j), max(id_i, id_j))
+            if pair in seen_pairs:
+                # skip duplicate computation for performance and determinism
+                continue
+            score = similarity(norm_texts[i], norm_texts[j])
+            sims.append((id_j, score, pair))
+        # pick top-k by score descending and above min similarity
+        sims.sort(key=lambda x: (-x[1], x[0]))
+        chosen = []
+        for id_j, score, pair in sims:
+            if score >= RELATIONS_MIN_SIM:
+                chosen.append((id_j, score, pair))
+            if len(chosen) >= RELATIONS_TOP_K:
+                break
+        for id_j, score, pair in chosen:
+            # add only if not already added by reverse
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            # pick deterministic direction: lexicographically smaller -> larger
+            source, target = pair
+            edges.append({"source": source, "target": target, "score": round(float(score), 6)})
+    return edges, len(edges)
+
+def atomic_write(path: Path, data: str):
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    tmp.replace(path)
+
+def file_checksum(path: Path) -> str:
+    try:
+        h = hashlib.sha256(path.read_bytes()).hexdigest()
+        return h
+    except Exception:
+        return ""
 
 def main():
     start = time.time()
     log("START relationer run")
-    graph = load_graph()
-    nodes = read_node_files()
-    # ensure graph nodes reflect disk
-    disk_ids = [n["id"] for n in nodes]
-    merged = []
-    seen = set()
-    for x in disk_ids + graph.get("nodes", []):
-        if x not in seen:
-            merged.append(x); seen.add(x)
-    graph["nodes"] = merged
-    # compute edges
-    edges = compute_edges(nodes)
-    graph["edges"] = edges
-    now = datetime.utcnow().isoformat() + "Z"
-    graph["meta"]["relations_generated_at"] = now
-    graph["meta"]["relations_count"] = len(edges)
-    graph["meta"]["relations_top_k"] = RELATIONS_TOP_K
-    graph["meta"]["relations_min_similarity"] = MIN_SIMILARITY
-    graph["meta"]["relations_checksum"] = compute_checksum(graph)
     try:
-        atomic_write(GRAPH_FILE, graph)
-        log("OK: wrote graph:", GRAPH_FILE, "| nodes:", len(graph["nodes"]), "edges:", len(edges))
+        node_files = sorted_node_list()
+        if not node_files:
+            log("No node files found - nothing to do")
+            # If graph exists, still update relations_generated_at
+            if GRAPH_FILE.exists():
+                g = safe_read_json(GRAPH_FILE) or {}
+            else:
+                g = {"meta": {}, "nodes": [], "edges": []}
+            g.setdefault("meta", {})
+            g["meta"]["relations_generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            g["meta"]["relations_count"] = 0
+            atomic_write(GRAPH_FILE, json.dumps(g, ensure_ascii=False, indent=2))
+            log("Wrote empty graph meta")
+            return 0
+
+        nodes = []
+        for p in node_files:
+            j = safe_read_json(p)
+            if not j:
+                log(f"Skipping unreadable node file {p}")
+                continue
+            node_id = j.get("id") or p.stem
+            text = j.get("text") or ""
+            nodes.append((node_id, text))
+        # if not enough nodes, write meta and exit
+        if len(nodes) < 2:
+            log(f"Only {len(nodes)} node(s) present - skipping relation computation")
+            if GRAPH_FILE.exists():
+                g = safe_read_json(GRAPH_FILE) or {}
+            else:
+                g = {"meta": {}, "nodes": [], "edges": []}
+            g.setdefault("meta", {})
+            g["meta"]["relations_generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            g["meta"]["relations_count"] = 0
+            atomic_write(GRAPH_FILE, json.dumps(g, ensure_ascii=False, indent=2))
+            log("Wrote graph meta for small corpus")
+            return 0
+
+        # compute relations
+        edges, count = compute_relations(nodes)
+        # prepare graph structure
+        meta = {
+            "domain": "ai-tools-creator-workflows",
+            "version": "0.1",
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "relations_generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "relations_count": int(count),
+            "relations_top_k": int(RELATIONS_TOP_K),
+            "relations_min_similarity": float(RELATIONS_MIN_SIM),
+            "relations_checksum": "",  # will fill after write
+            "optimized": True
+        }
+        node_ids = [nid for (nid, _) in nodes]
+        graph_obj = {"meta": meta, "nodes": node_ids, "edges": edges}
+
+        # atomic write graph
+        atomic_write(GRAPH_FILE, json.dumps(graph_obj, ensure_ascii=False, indent=2))
+        # compute checksum and update meta (atomic replace)
+        cs = file_checksum(GRAPH_FILE)
+        graph_obj["meta"]["relations_checksum"] = cs
+        atomic_write(GRAPH_FILE, json.dumps(graph_obj, ensure_ascii=False, indent=2))
+
+        duration = time.time() - start
+        log(f"OK: wrote graph: {GRAPH_FILE} | nodes: {len(node_ids)} edges: {count} | dt={duration:.2f}s")
+        return 0
     except Exception as e:
-        log("ERROR: failed to write graph:", str(e))
-        raise
-    elapsed = time.time() - start
-    log("DONE relationer run in %.2fs" % elapsed)
+        # write safe partial graph meta
+        log("EXCEPTION in relationer: " + str(e))
+        tb = traceback.format_exc()
+        log(tb)
+        try:
+            g = {"meta": {"relations_generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                          "relations_count": 0}, "nodes": [], "edges": []}
+            atomic_write(GRAPH_FILE, json.dumps(g, ensure_ascii=False, indent=2))
+            log("Wrote fallback partial graph.json after exception")
+        except Exception as e2:
+            log("Failed to write fallback graph.json: " + str(e2))
+        return 2
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
