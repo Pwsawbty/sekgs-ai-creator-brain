@@ -2,8 +2,17 @@
   "meta": {
     "domain": "ai-tools-creator-workflows",
     "version": "0.1",
-    "generated_at": "2025-11-28T00:00:00Z"
+    "generated_at": "2025-11-30T07:41:19.358668Z",
+    "relations_generated_at": "2025-11-30T07:41:19.404816Z",
+    "relations_count": 0,
+    "relations_top_k": 3,
+    "relations_min_similarity": 0.05,
+    "relations_checksum": "9e81d7d2e3df91f8468a8d56834eca685f19b6a4f5efe72b442e1e66ccac4bb1",
+    "optimized": true
   },
-  "nodes": [],
+  "nodes": [
+    "en.wikipedia.org_wiki_Artificial_intelligence",
+    "en.wikipedia.org_wiki_Machine_learning"
+  ],
   "edges": []
 }

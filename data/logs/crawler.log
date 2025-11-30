@@ -1,0 +1,4 @@
+2025-11-30T07:41:17Z [CRAWLER] GET https://en.wikipedia.org/wiki/Artificial_intelligence attempt=1
+2025-11-30T07:41:18Z [CRAWLER] saved node /home/runner/work/sekgs-ai-creator-brain/sekgs-ai-creator-brain/data/nodes/en.wikipedia.org_wiki_Artificial_intelligence.json partial=False cached=False
+2025-11-30T07:41:18Z [CRAWLER] GET https://en.wikipedia.org/wiki/Machine_learning attempt=1
+2025-11-30T07:41:19Z [CRAWLER] saved node /home/runner/work/sekgs-ai-creator-brain/sekgs-ai-creator-brain/data/nodes/en.wikipedia.org_wiki_Machine_learning.json partial=False cached=False
