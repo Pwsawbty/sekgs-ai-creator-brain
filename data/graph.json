@@ -2,12 +2,12 @@
   "meta": {
     "domain": "ai-tools-creator-workflows",
     "version": "0.1",
-    "generated_at": "2025-11-30T07:58:57Z",
-    "relations_generated_at": "2025-11-30T07:58:57Z",
+    "generated_at": "2025-12-01T02:18:49Z",
+    "relations_generated_at": "2025-12-01T02:18:49Z",
     "relations_count": 1,
     "relations_top_k": 3,
     "relations_min_similarity": 0.05,
-    "relations_checksum": "fc86c390c7792109b065a7634f39b1940de92c2e07aa1d27926b0099650ecb08",
+    "relations_checksum": "c462a9dab0220888ed4ed38fea2c34eed7d1fa17bf64282fa26f404ab3e5e981",
     "optimized": true
   },
   "nodes": [
