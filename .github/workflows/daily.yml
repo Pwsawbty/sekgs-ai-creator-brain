@@ -1,58 +1,47 @@
-permissions:
-  contents: write
-name: SEKGS Daily Cycle
+name: SEKGS Advanced Cycle
 
 on:
-  schedule:
-    - cron: "0 2 * * *"
   workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"
+
+permissions:
+  contents: write
 
 jobs:
-  run-sekgs:
+  run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Python Setup
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r agents/requirements.txt
 
-      - name: Run crawler
-        run: python agents/crawler.py
+      - name: Run Intelligence Cycle
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python agents/crawler.py
+          python agents/cleaner.py
+          python agents/mapper.py
+          python agents/relationer.py
+          python agents/optimizer.py
+          python agents/publisher.py
 
-      - name: Run cleaner
-        run: python agents/cleaner.py
-
-      - name: Run mapper
-        run: python agents/mapper.py
-
-      - name: Run relationer
-        run: python agents/relationer.py
-
-      - name: Run optimizer
-        run: python agents/optimizer.py
-
-      - name: Run publisher
-        run: python agents/publisher.py
-
-      - name: Commit generated data
+      - name: Commit updates
         run: |
           git config user.email "bot@github.com"
           git config user.name "SEKGS Bot"
-          git add data/ reports/ || true
-          git diff --quiet --staged || (git commit -m "chore: update graph + reports" && echo "Committed changes")
-        shell: bash
-
-      - name: Push changes
-        run: |
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git push origin HEAD:main || echo "Push failed (likely no changes or permission); continuing"
-        shell: bash
+          git add data graph reports || true
+          git diff --quiet || git commit -m "chore: advanced daily update"
+          git push
