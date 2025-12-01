@@ -1,0 +1,6 @@
+# CODEOWNERS — required approvers for changes
+# All changes to core folders require review from you (owner)
+* @Pwsawbty
+/data/ @Pwsawbty
+/agents/ @Pwsawbty
+.rules @Pwsawbty
