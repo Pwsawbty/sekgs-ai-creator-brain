@@ -108,10 +108,41 @@ def notion_push(headline, summary, actions, nodes_count, edges_count, anomalies)
             "Edges Count": {"number": edges_count},
             "Alerts": {"rich_text":[{"text":{"content": anomalies or "None"}}]}
         },
-        children=[
-            {"object":"block","type":"paragraph","paragraph":{"rich_text":[{"text":{"content":summary}}]}},
-            {"object":"block","type":"bulleted_list_item","bulleted_list_item":{"rich_text":[{"text":{"content":a}}]}}
-            for a in actions
+        children = [
+    {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {
+            "rich_text": [
+                {"type": "text", "text": {"content": summary}}
+            ]
+        }
+    }
+]
+
+# add actions as bullet list items
+for a in actions:
+    children.append({
+        "object": "block",
+        "type": "bulleted_list_item",
+        "bulleted_list_item": {
+            "rich_text": [
+                {"type": "text", "text": {"content": a}}
+            ]
+        }
+    })
+
+page = notion.pages.create(
+    parent={"database_id": NOTION_DB},
+    properties={
+        "Name": {"title": [{"text": {"content": headline}}]},
+        "Date": {"date": {"start": str(datetime.utcnow().date())}},
+        "Nodes Count": {"number": nodes_count},
+        "Edges Count": {"number": edges_count},
+        "Alerts": {"rich_text": [{"text": {"content": anomalies or 'None'}}]}
+    },
+    children=children
+)
         ]
     )
     print("[publisher] Notion updated:", page["id"])
